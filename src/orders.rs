@@ -6,7 +6,7 @@
 //! state is rebuilt by replaying that log. An order's intent is saved before it
 //! is sent, so a crash can't lose track of it, and a restart never resends:
 //! it asks the broker what happened instead.
-use crate::csv::{quote, Row, Table};
+use crate::csv::{one_line, quote, Row, Table};
 use crate::dates::format_date;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -173,10 +173,6 @@ impl Order {
         }
         Ok(())
     }
-}
-
-fn one_line(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn encode(at: i64, id: &str, event: &Event) -> String {

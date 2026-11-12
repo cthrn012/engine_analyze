@@ -22,8 +22,23 @@ pub fn parse_line(line: &str) -> Vec<String> {
     fields
 }
 
+/// Joins all whitespace runs, line breaks included, into single spaces.
+pub fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Formats one cell. The reader handles one record per line, so a line break
+/// inside a cell would split the row in two: those cells are joined onto one
+/// line first, and every row written can be read back.
 pub fn quote(s: &str) -> String {
-    if s.contains([',', '"', '\n']) {
+    let joined;
+    let s = if s.contains(['\n', '\r']) {
+        joined = one_line(s);
+        &joined
+    } else {
+        s
+    };
+    if s.contains([',', '"']) {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
         s.to_string()
@@ -112,6 +127,18 @@ impl Row<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn written_rows_read_back_even_with_line_breaks() {
+        let cells = ["Chip maker\nbeats, \"again\"", "line\r\nbreak", "plain"];
+        let row: Vec<String> = cells.iter().map(|c| quote(c)).collect();
+        let t = Table::parse("t", &format!("a,b,c\n{}\n", row.join(","))).unwrap();
+        assert_eq!(t.rows.len(), 1);
+        assert_eq!(
+            t.rows[0].1,
+            vec!["Chip maker beats, \"again\"", "line break", "plain"]
+        );
+    }
 
     #[test]
     fn handles_quotes_and_commas() {
