@@ -229,7 +229,13 @@ fn load_exits(path: &Path) -> Result<HashMap<usize, ExitRow>, String> {
             days_held: r.num("days_held")?,
             pnl: r.num("realized_pnl")?,
         };
-        out.insert(r.num("trade_id")?, row);
+        let id: usize = r.num("trade_id")?;
+        // A second exit would silently replace the first one's PnL.
+        if out.insert(id, row).is_some() {
+            return Err(r.err(&format!(
+                "trade {id} already has an exit; remove the duplicate row"
+            )));
+        }
     }
     Ok(out)
 }
@@ -319,7 +325,19 @@ pub fn load(path: &Path, market: &Market) -> Result<Ledger, String> {
     }
     let today = market.as_of / 86400;
     let exits = load_exits(&exits_path(path))?;
-    for (i, r) in Table::read(path)?.iter().enumerate() {
+    let trades = Table::read(path)?;
+    if let Some(id) = exits
+        .keys()
+        .filter(|id| **id == 0 || **id > trades.rows.len())
+        .min()
+    {
+        return Err(format!(
+            "{}: exit recorded for trade {id}, which is not in {}",
+            exits_path(path).display(),
+            path.display()
+        ));
+    }
+    for (i, r) in trades.iter().enumerate() {
         let id = i + 1;
         if let Some(e) = exits.get(&id) {
             let ticker = r.get("ticker")?.to_string();
