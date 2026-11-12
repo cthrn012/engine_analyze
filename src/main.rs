@@ -20,6 +20,7 @@ const USAGE: &str = "\
 Paper-only options engine
 
 USAGE:
+  engine help
   engine analyze <TICKER> [--paper] [--theme NAME] [--data DIR] [--journal FILE]
   engine scan [--theme NAME] [--data DIR] [--journal FILE]
   engine exits [--paper] [--data DIR] [--journal FILE]
@@ -56,6 +57,7 @@ struct Args {
     source: Option<PathBuf>,
     labels: Option<PathBuf>,
     port: Option<u16>,
+    help: bool,
 }
 
 fn parse(raw: &[String]) -> Result<Args, String> {
@@ -64,6 +66,7 @@ fn parse(raw: &[String]) -> Result<Args, String> {
     while let Some(arg) = it.next() {
         let mut value = || it.next().cloned().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
+            "--help" | "-h" => a.help = true,
             "--paper" => a.paper = true,
             "--delayed" => a.delayed = true,
             "--orders" => a.orders = Some(value()?.into()),
@@ -676,6 +679,10 @@ fn cmd_news_check(a: &Args) -> Result<(), String> {
 fn run() -> Result<(), String> {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let a = parse(&raw)?;
+    if a.help {
+        println!("{USAGE}");
+        return Ok(());
+    }
     match a.positional.first().map(String::as_str) {
         Some("analyze") => cmd_analyze(&a),
         Some("scan") => cmd_scan(&a),
@@ -695,10 +702,15 @@ fn run() -> Result<(), String> {
             );
             Ok(())
         }
-        _ => {
+        None | Some("help") => {
             println!("{USAGE}");
             Ok(())
         }
+        // A typo must not exit successfully, or a script running it would
+        // think the step worked.
+        Some(other) => Err(format!(
+            "unknown command '{other}'. Run `engine help` to see the commands."
+        )),
     }
 }
 
