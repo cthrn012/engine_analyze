@@ -30,6 +30,26 @@ pub fn quote(s: &str) -> String {
     }
 }
 
+/// A number a CSV cell can hold. Floats must also be finite, because Rust reads
+/// `NaN`, `inf` and overflowing values like `1e999` as valid `f64`s, and a NaN
+/// slips past every `<` or `>` check downstream.
+pub trait Number: std::str::FromStr {
+    fn is_usable(&self) -> bool {
+        true
+    }
+}
+
+impl Number for f64 {
+    fn is_usable(&self) -> bool {
+        self.is_finite()
+    }
+}
+
+impl Number for u32 {}
+impl Number for u64 {}
+impl Number for i64 {}
+impl Number for usize {}
+
 pub struct Table {
     pub name: String,
     pub header: Vec<String>,
@@ -98,10 +118,12 @@ impl Row<'_> {
         Ok(self.cells[i].trim())
     }
 
-    pub fn num<T: std::str::FromStr>(&self, col: &str) -> Result<T, String> {
+    pub fn num<T: Number>(&self, col: &str) -> Result<T, String> {
         let v = self.get(col)?;
         v.parse()
-            .map_err(|_| self.err(&format!("bad value '{v}' in column '{col}'")))
+            .ok()
+            .filter(T::is_usable)
+            .ok_or_else(|| self.err(&format!("bad value '{v}' in column '{col}'")))
     }
 
     pub fn err(&self, msg: &str) -> String {
@@ -120,6 +142,16 @@ mod tests {
             vec!["a", "b, c", "say \"hi\""]
         );
         assert_eq!(parse_line(&quote("x, \"y\"")), vec!["x, \"y\""]);
+    }
+
+    #[test]
+    fn rejects_numbers_that_are_not_finite() {
+        let t = Table::parse("t", "x\nNaN\ninf\n-Infinity\n1e999\n1.5\n").unwrap();
+        let got: Vec<Result<f64, String>> = t.iter().map(|r| r.num("x")).collect();
+        for bad in &got[..4] {
+            assert!(bad.as_ref().unwrap_err().contains("bad value"), "{bad:?}");
+        }
+        assert_eq!(got[4], Ok(1.5));
     }
 
     #[test]
