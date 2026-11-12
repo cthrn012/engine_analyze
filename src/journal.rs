@@ -34,19 +34,38 @@ fn append_row(path: &Path, header: &str, cells: &[String]) -> Result<(), String>
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let new = !path.exists();
+    let old = if path.exists() {
+        fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
+    } else {
+        String::new()
+    };
+    let mut text = String::new();
+    // A file saved without a final newline would join the new row onto its last one.
+    if !old.is_empty() && !old.ends_with('\n') {
+        text.push('\n');
+    }
+    match old.lines().find(|l| !l.trim().is_empty()) {
+        None => {
+            text.push_str(header);
+            text.push('\n');
+        }
+        // Rows are read by column name, so appending under another version's
+        // header would put values in the wrong columns.
+        Some(found) if found.trim_end_matches('\r') != header => {
+            return Err(format!(
+                "{}: the header doesn't match the columns this version writes.\n  found:    {found}\n  expected: {header}",
+                path.display()
+            ));
+        }
+        Some(_) => {}
+    }
+    text.push_str(&cells.iter().map(|c| quote(c)).collect::<Vec<_>>().join(","));
+    text.push('\n');
     let mut f = OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
         .map_err(|e| e.to_string())?;
-    let mut text = String::new();
-    if new {
-        text.push_str(header);
-        text.push('\n');
-    }
-    text.push_str(&cells.iter().map(|c| quote(c)).collect::<Vec<_>>().join(","));
-    text.push('\n');
     f.write_all(text.as_bytes()).map_err(|e| e.to_string())
 }
 
@@ -396,4 +415,54 @@ pub fn summarize<'a>(trades: impl Iterator<Item = &'a ClosedTrade>) -> Summary {
         s.risk += t.risk;
         s
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("engine-journal-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir.join("rows.csv")
+    }
+
+    fn row() -> Vec<String> {
+        vec!["1".into(), "2".into()]
+    }
+
+    #[test]
+    fn writes_the_header_once() {
+        let p = temp("header-once");
+        append_row(&p, "a,b", &row()).unwrap();
+        append_row(&p, "a,b", &row()).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "a,b\n1,2\n1,2\n");
+    }
+
+    #[test]
+    fn refuses_a_file_with_another_header() {
+        let p = temp("other-header");
+        fs::write(&p, "a,c\n1,2\n").unwrap();
+        let e = append_row(&p, "a,b", &row()).unwrap_err();
+        assert!(e.contains("header doesn't match"), "{e}");
+        assert_eq!(fs::read_to_string(&p).unwrap(), "a,c\n1,2\n");
+    }
+
+    #[test]
+    fn a_missing_final_newline_does_not_join_rows() {
+        let p = temp("no-newline");
+        fs::write(&p, "a,b\r\n1,2").unwrap();
+        append_row(&p, "a,b", &row()).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "a,b\r\n1,2\n1,2\n");
+    }
+
+    #[test]
+    fn an_empty_file_gets_a_header() {
+        let p = temp("empty");
+        fs::write(&p, "").unwrap();
+        append_row(&p, "a,b", &row()).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "a,b\n1,2\n");
+    }
 }
