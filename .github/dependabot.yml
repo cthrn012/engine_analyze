@@ -1,0 +1,18 @@
+# Weekly update PRs for Rust crates and GitHub Actions. Each PR runs CI, so a
+# breaking update shows up as a failing check rather than a surprise later.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Minor and patch updates arrive as one PR; major versions stay separate.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
