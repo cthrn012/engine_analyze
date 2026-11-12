@@ -94,6 +94,15 @@ impl Table {
             .iter()
             .map(|h| h.trim().to_lowercase())
             .collect();
+        // Cells are looked up by name, so a repeated column would quietly use
+        // the first one and ignore the other.
+        if let Some(h) = header
+            .iter()
+            .enumerate()
+            .find_map(|(i, h)| header[..i].contains(h).then_some(h))
+        {
+            return Err(format!("{name}: column '{h}' appears more than once"));
+        }
         let mut rows = Vec::new();
         for (n, l) in lines {
             let cells = parse_line(l);
@@ -185,5 +194,11 @@ mod tests {
     fn reports_line_numbers() {
         let e = Table::parse("t", "a,b\n1,2\n3\n").err().unwrap();
         assert!(e.contains("t:3"), "{e}");
+    }
+
+    #[test]
+    fn refuses_a_repeated_column() {
+        let e = Table::parse("t", "bid,ask,Bid\n1,2,3\n").err().unwrap();
+        assert!(e.contains("column 'bid' appears more than once"), "{e}");
     }
 }
