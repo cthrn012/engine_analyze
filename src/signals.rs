@@ -142,7 +142,16 @@ pub fn compute(market: &Market, m: &Member) -> Result<Signals, String> {
             rows.len()
         ));
     }
-    let spot = rows[rows.len() - 1].close;
+    let last = &rows[rows.len() - 1];
+    // The chain and news are as of the snapshot date, so a stock whose prices
+    // stopped earlier would be priced against quotes from a different day.
+    if last.date != market.as_of_date {
+        return Err(format!(
+            "{}'s latest price is from {}, but the data is as of {}",
+            m.ticker, last.date, market.as_of_date
+        ));
+    }
+    let spot = last.close;
 
     let rets: Vec<f64> = log_returns(rows).iter().map(|r| r.1).collect();
     let realized_vol = stdev(&rets[rets.len() - 20..]) * YEAR.sqrt();
