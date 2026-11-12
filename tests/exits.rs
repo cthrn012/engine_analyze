@@ -252,6 +252,34 @@ fn closing_twice_is_impossible_and_later_days_keep_the_result() {
 }
 
 #[test]
+fn a_trade_cannot_have_two_exit_rows() {
+    let path = journal_with(&[LONG_CALL]);
+    std::fs::write(
+        journal::exits_path(&path),
+        format!(
+            "{EXIT_HEADER}\n1,2026-01-11,stop loss,10,0.9000,,-110.00\n1,2026-01-12,take profit,11,3.0000,,100.00\n"
+        ),
+    )
+    .unwrap();
+    let m = market("2026-01-12", &[("2026-01-12", 100.0)], vec![]);
+    let e = journal::load(&path, &m).err().unwrap();
+    assert!(e.contains("trade 1 already has an exit"), "{e}");
+}
+
+#[test]
+fn an_exit_for_a_trade_that_does_not_exist_is_refused() {
+    let path = journal_with(&[LONG_CALL]);
+    std::fs::write(
+        journal::exits_path(&path),
+        format!("{EXIT_HEADER}\n2,2026-01-11,stop loss,10,0.9000,,-110.00\n"),
+    )
+    .unwrap();
+    let m = market("2026-01-12", &[("2026-01-12", 100.0)], vec![]);
+    let e = journal::load(&path, &m).err().unwrap();
+    assert!(e.contains("trade 2, which is not in"), "{e}");
+}
+
+#[test]
 fn summary_compares_results_with_forecasts() {
     let path = journal_with(&[LONG_CALL, LONG_CALL]);
     std::fs::write(
