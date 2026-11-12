@@ -103,7 +103,19 @@ pub fn decide(l: &Limits, kill_switch: bool, book: &Book, r: &Request) -> Decisi
         return Decision::Blocked(format!("{} was already closed today", r.ticker));
     }
 
+    // Selection only builds trades with a positive, finite max loss, but this is
+    // the last check before the broker, so it doesn't rely on that: a zero or
+    // NaN here would size the trade to an unlimited number of contracts.
     let per_contract = r.candidate.max_loss * 100.0;
+    if !(per_contract.is_finite() && per_contract > 0.0) {
+        return Decision::Blocked(format!(
+            "max loss of ${:.2}/sh can't be used to size the trade",
+            r.candidate.max_loss
+        ));
+    }
+    if !(r.spot.is_finite() && r.spot > 0.0 && r.candidate.delta.is_finite()) {
+        return Decision::Blocked("spot or delta is not a usable number".into());
+    }
     let budget = (l.max_trade_risk * l.equity)
         .min(l.max_group_risk * l.equity - book.group_risk(r.group))
         .min(l.max_total_risk * l.equity - book.total_risk());
@@ -193,6 +205,31 @@ mod tests {
             }
             d => panic!("{d:?}"),
         }
+    }
+
+    #[test]
+    fn a_max_loss_that_cannot_size_the_trade_is_blocked() {
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let c = cand(bad, 0.0);
+            assert!(
+                blocked(decide(
+                    &Limits::default(),
+                    false,
+                    &Book::default(),
+                    &req(&c)
+                ))
+                .contains("can't be used to size"),
+                "{bad}"
+            );
+        }
+        let c = cand(1.0, f64::NAN);
+        assert!(blocked(decide(
+            &Limits::default(),
+            false,
+            &Book::default(),
+            &req(&c)
+        ))
+        .contains("not a usable number"));
     }
 
     #[test]
