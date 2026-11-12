@@ -89,6 +89,24 @@ fn parse(raw: &[String]) -> Result<Args, String> {
             s => a.positional.push(s.to_string()),
         }
     }
+    // Arguments a command doesn't use would otherwise be ignored without a
+    // word: `analyze INTC AMD` would analyze INTC only.
+    // Unknown commands are reported by `run`, not here.
+    let allowed = match a.positional.first().map(String::as_str) {
+        Some("analyze") => 1,
+        Some("fetch") | None => usize::MAX,
+        Some(
+            "scan" | "exits" | "positions" | "news-grade" | "news-check" | "orders" | "gen-sample"
+            | "help",
+        ) => 0,
+        Some(_) => usize::MAX,
+    };
+    if let Some(extra) = a.positional.iter().skip(1).nth(allowed) {
+        return Err(format!(
+            "unexpected argument '{extra}' for {}",
+            a.positional[0]
+        ));
+    }
     Ok(a)
 }
 
@@ -691,5 +709,28 @@ fn main() -> ExitCode {
             eprintln!("error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(s: &str) -> Result<Args, String> {
+        parse(&s.split_whitespace().map(String::from).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn each_command_takes_only_the_arguments_it_uses() {
+        assert!(args("analyze INTC --paper").is_ok());
+        assert!(args("fetch INTC AMD NVDA --delayed").is_ok());
+        assert!(args("scan --theme blue-wave").is_ok());
+        let e = args("analyze INTC AMD").err().unwrap();
+        assert_eq!(e, "unexpected argument 'AMD' for analyze");
+        let e = args("scan INTC").err().unwrap();
+        assert_eq!(e, "unexpected argument 'INTC' for scan");
+        assert!(args("exits paper").is_err());
+        assert!(args("positions extra").is_err());
+        assert!(args("anlyze INTC").is_ok(), "left for run() to report");
     }
 }
