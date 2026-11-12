@@ -23,7 +23,9 @@ pub fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (yoe + era * 400 + if m <= 2 { 1 } else { 0 }, m, d)
 }
 
-/// Parses `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SSZ` into Unix seconds.
+/// Parses `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SSZ` into Unix seconds. Dates and
+/// times that don't exist, such as `2026-02-30` or `25:00:00`, are refused
+/// rather than rolled over into a different day.
 pub fn parse_ts(s: &str) -> Option<i64> {
     let s = s.trim().trim_end_matches('Z');
     let (date, time) = s.split_once('T').unwrap_or((s, "00:00:00"));
@@ -36,6 +38,13 @@ pub fn parse_ts(s: &str) -> Option<i64> {
         .map(|x| x.parse().ok())
         .collect::<Option<_>>()?;
     if d.len() != 3 || t.len() != 3 {
+        return None;
+    }
+    let real_day = (1..=12).contains(&d[1])
+        && (1..=31).contains(&d[2])
+        && civil_from_days(days_from_civil(d[0], d[1], d[2])) == (d[0], d[1], d[2]);
+    if !real_day || !(0..24).contains(&t[0]) || !(0..60).contains(&t[1]) || !(0..60).contains(&t[2])
+    {
         return None;
     }
     Some(days_from_civil(d[0], d[1], d[2]) * 86400 + t[0] * 3600 + t[1] * 60 + t[2])
@@ -62,5 +71,25 @@ mod tests {
         assert_eq!(parse_ts("1970-01-02T00:00:10Z"), Some(86410));
         assert_eq!(parse_ts("1970-01-02"), Some(86400));
         assert_eq!(parse_ts("garbage"), None);
+    }
+
+    #[test]
+    fn refuses_dates_and_times_that_do_not_exist() {
+        for bad in [
+            "2026-13-01",
+            "2026-00-10",
+            "2026-02-30",
+            "2025-02-29",
+            "2026-04-31",
+            "2026-11-00",
+            "2026-11-05T24:00:00Z",
+            "2026-11-05T12:60:00Z",
+            "2026-11-05T12:00:60Z",
+            "2026-11-05T-1:00:00Z",
+        ] {
+            assert_eq!(parse_ts(bad), None, "{bad}");
+        }
+        assert!(parse_ts("2024-02-29").is_some());
+        assert!(parse_ts("2026-12-31T23:59:59Z").is_some());
     }
 }
