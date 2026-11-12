@@ -141,3 +141,13 @@ fn journal_feeds_back_into_risk_limits() {
     let again = analyze(&ctx(&m, &l, &book, false), t).unwrap();
     assert!(matches!(&again.decision, Decision::Blocked(w) if w.contains("already")));
 }
+
+#[test]
+fn a_stock_whose_prices_stopped_early_is_not_analyzed() {
+    let mut m = market("stale");
+    let (t, _, _) = WATCHLIST[0];
+    m.prices.get_mut(t).unwrap().pop();
+    let (l, b) = (Limits::default(), Book::default());
+    let e = analyze(&ctx(&m, &l, &b, false), t).err().unwrap();
+    assert!(e.contains("latest price is from"), "{e}");
+}
