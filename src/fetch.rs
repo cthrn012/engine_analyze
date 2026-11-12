@@ -3,7 +3,7 @@
 //!
 //! Each snapshot holds only what was available when it was fetched, which is
 //! what keeps later analysis of old snapshots free of hindsight.
-use crate::csv::{quote, Table};
+use crate::csv::{one_line, quote, Table};
 use crate::data::OptionQuote;
 use crate::dates::{format_date, parse_ts};
 use crate::pricing::Right;
@@ -120,10 +120,6 @@ fn io(e: std::io::Error) -> String {
 }
 
 /// The CSV reader works line by line, so a saved field can't contain a line break.
-fn one_line(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 fn news_csv(stories: &[Story], fetched: &str) -> String {
     let mut csv = String::from("available_at,ticker,source,headline,fetched_at\n");
     for n in stories {
